@@ -4,6 +4,7 @@ pygtk.require('2.0')
 
 import cgi
 import sys
+import logging
 import gtk
 import gnomeapplet
 import gobject
@@ -12,13 +13,14 @@ import pynotify
 from mpd import (MPDClient, CommandError)
 from socket import error as SocketError
 
-
-class MPDPanel(gnomeapplet.Applet):
+class MPDPanel(gnomeapplet.Applet):                         
 	"""
 	MPD Panel main class
 	"""
 	title = "MPD Panel"
 	version = "0.1"
+
+	logging.basicConfig(level=logging.DEBUG)
 
 	configuration = {
 		"host"   : "localhost",
@@ -27,7 +29,20 @@ class MPDPanel(gnomeapplet.Applet):
 		"secret" : False
 	}
 
+	def show_notification(self, title, text):
+		if self.__notification is None:
+			try:
+				import pynotify
+				self.__notification = pynotify.Notification (" ", "", "/usr/share/panflute/panflute.svg")
+				self.__notification.set_urgency(pynotify.URGENCY_LOW)
+			except ImportError, e:
+				return
+
+		self.__notification.update(title, text, "/usr/share/panflute/panflute.svg")
+		self.__notification.show()
+
 	def mpd_idled(self, client, condition, *args):
+		logging.debug('mpd_idled')
 		idled = client.fetch_idle()
 		if idled[0] == "player":
 			self.update_label();
@@ -36,67 +51,82 @@ class MPDPanel(gnomeapplet.Applet):
 		return True
 
 	def update_label(self):
+		logging.debug('update_label')
 		output = "";
-		status = self.client.status()
+		status = self.__mpdclient.status()
 
 		if status["state"] == "play":
-			current = self.client.currentsong()
+			current = self.__mpdclient.currentsong()
 			output = cgi.escape(current["name"]) + ': ' + cgi.escape(current["title"]) + ''
-			notification = pynotify.Notification(current["name"], current["title"], "/usr/share/panflute/panflute.svg")
-			notification.set_timeout(3)
-			notification.show()
+			self.show_notification(current["name"], current["title"])
 		if status["state"] == "pause":
-			current = self.client.currentsong()
+			current = self.__mpdclient.currentsong()
 			if current["file"].startswith("http://"):
 				output = "MPD Paused"
 		if status["state"] == "stop":
 			output = "MPD Stopped"
 
 		if output != "":
-			self.label.set_markup(output)
+			self.__label.set_markup(output)
 
 	def connect(self, *args):
 		"""
 		Attempt to connect to MPD
 		"""
+		logging.debug('connect')
 		try:
-			self.client.connect(self.configuration["host"], self.configuration["port"])
+			self.__mpdclient.connect(self.configuration["host"], self.configuration["port"])
 		except SocketError:
-			self.label.set_markup("<b>Conneccting to MPD...</b> - Socket Error - Retrying")
+			self.__label.set_markup("<b>Conneccting to MPD...</b> - Socket Error - Retrying")
 			gobject.timeout_add(self.configuration["retry"] * 1000, self.connect)
 			return False
 
 		if self.configuration["secret"]:
 			try:
-				self.client.password(self.configuration["secret"])
+				self.__mpdclient.password(self.configuration["secret"])
 			except CommandError:
-				self.label.set_markup("<b>Connecting to MPD...</b> - Authentication error")
+				self.__label.set_markup("<b>Connecting to MPD...</b> - Authentication error")
 				gobject.timeout_add(self.configuration["retry"] * 1000, self.connect)
 				return False
 
 		self.update_label()
-		self.client.send_idle('player')
-		gobject.io_add_watch(self.client, gobject.IO_IN, self.mpd_idled)
+		self.__mpdclient.send_idle('player')
+		gobject.io_add_watch(self.__mpdclient, gobject.IO_IN, self.mpd_idled)
 		return False
 
-
 	def __init__(self, applet, iid):
-		pynotify.init("MPD Applet 0.1")
-		self.applet = applet
-		self.label = gtk.Label("")
-		self.label.set_alignment (0.5, 0.5)
-		self.label.set_markup("<b>Connecting to MPD...</b>")
-		self.applet.add(self.label)
-		self.applet.show_all()
-		self.client = MPDClient();
+		logging.debug('__init__')
+
+		self.__applet = applet
+		self.__mpdclient = MPDClient();
+
+		applet.set_border_width(0)
+		applet.set_background_widget(applet) # Transparency hack?
+
+		try:
+			import pynotify;
+			pynotify.init(self.title)
+		except ImportError, e:
+			self.log.warn("Couldn't initialize notifications: {0}".format(e))
+
+		self.__notification = None
+
+		applet.set_applet_flags(gnomeapplet.EXPAND_MINOR | gnomeapplet.EXPAND_MAJOR | gnomeapplet.HAS_HANDLE)
+
+		hbox = gtk.HBox ()
+		label = gtk.Label("<b>Connecting</b>")
+		hbox.pack_start(label, True, True)
+		applet.add(hbox)
+		hbox.show();
+		applet.show_all()
+
+		self.__label = label
 		self.connect()
+
 
 gobject.type_register(MPDPanel);
 
 def mpd_panel_factory(applet, iid):
-	applet.set_border_width(0)
-	applet.set_background_widget(applet)
-	applet.set_flags(gnomeapplet.HAS_HANDLE | gnomeapplet.EXPAND_MINOR)
 	MPDPanel(applet, iid)
 	return gtk.TRUE
 
