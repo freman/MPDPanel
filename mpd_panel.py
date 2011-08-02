@@ -13,11 +13,11 @@ import pynotify
 from mpd import (MPDClient, CommandError)
 from socket import error as SocketError
 
-class MPDPanel(gnomeapplet.Applet):                         
+class MPDPanel(gnomeapplet.Applet):
 	"""
 	MPD Panel main class
 	"""
-	title = "MPD Panel"
+	title = "MPDPanel"
 	version = "0.1"
 
 	logging.basicConfig(level=logging.DEBUG)
@@ -69,7 +69,7 @@ class MPDPanel(gnomeapplet.Applet):
 		if output != "":
 			self.__label.set_markup(output)
 
-	def connect(self, *args):
+	def mpdconnect(self, *args):
 		"""
 		Attempt to connect to MPD
 		"""
@@ -95,13 +95,11 @@ class MPDPanel(gnomeapplet.Applet):
 		return False
 
 	def __init__(self, applet, iid):
-		logging.debug('__init__')
-
 		self.__applet = applet
 		self.__mpdclient = MPDClient();
 
-		applet.set_border_width(0)
-		applet.set_background_widget(applet) # Transparency hack?
+		self.__applet.set_border_width(0)
+		self.__applet.set_background_widget(applet) # Transparency hack?
 
 		try:
 			import pynotify;
@@ -111,17 +109,17 @@ class MPDPanel(gnomeapplet.Applet):
 
 		self.__notification = None
 
-		applet.set_applet_flags(gnomeapplet.EXPAND_MINOR | gnomeapplet.EXPAND_MAJOR | gnomeapplet.HAS_HANDLE)
+		self.__applet.set_applet_flags(gnomeapplet.EXPAND_MINOR | gnomeapplet.EXPAND_MAJOR)
 
-		hbox = gtk.HBox ()
-		label = gtk.Label("<b>Connecting</b>")
-		hbox.pack_start(label, True, True)
-		applet.add(hbox)
-		hbox.show();
-		applet.show_all()
+		self.__label = gtk.Label("")
+		self.__label.set_markup("<b>Connecting to MPD</b>")
+		self.__label.set_alignment(0.5, 0.5)
+		self.__label.modify_fg(gtk.STATE_NORMAL, gtk.gdk.color_parse("#FFF"))
+		self.__label.modify_fg(gtk.STATE_INSENSITIVE, gtk.gdk.color_parse("#FFF"))
+		self.__applet.add(self.__label)
+		self.__applet.show_all()
 
-		self.__label = label
-		self.connect()
+		self.mpdconnect()
 
 
 gobject.type_register(MPDPanel);
